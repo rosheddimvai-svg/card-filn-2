@@ -148,15 +148,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             ]]
         )
         
-        await context.bot.send_message(
-            chat_id=CARD_REVIEW_CHANNEL_ID,
-            text=caption_text,
-            reply_markup=review_keyboard,
-            parse_mode="Markdown"
-        )
-            
-        await message.reply_text("Your card details have been sent for review. We will notify you of the result.")
-        user_states.pop(user_id, None)
+        # Added a try-except block here to handle potential errors when sending the message
+        try:
+            await context.bot.send_message(
+                chat_id=CARD_REVIEW_CHANNEL_ID,
+                text=caption_text,
+                reply_markup=review_keyboard,
+                parse_mode="Markdown"
+            )
+            await message.reply_text("Your card details have been sent for review. We will notify you of the result.")
+            user_states.pop(user_id, None)
+        except Exception as e:
+            logger.error(f"Failed to send card submission to admin channel. Error: {e}", exc_info=True)
+            await message.reply_text("Sorry, an error occurred while sending your card details for review. Please check if the bot is a member of the admin group with the correct permissions.")
         
     # --- Withdrawal handlers ---
     elif user_state == "waiting_for_withdraw_address":
@@ -289,9 +293,6 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_info = await context.bot.get_chat(user_id)
         user_full_name = user_info.full_name
         user_mention = f"[{user_full_name}](tg://user?id={user_id})"
-        
-        # We will directly add balance using the new command method now.
-        # This will simplify the process and avoid the complex inline button chain.
         
         await query.edit_message_text(
             f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\n**User:** {user_mention} \n**User ID:** `{user_id}`\n\nPlease use the `/add_balance` command to add balance to the user's account.\n\nExample: `/add_balance {user_id} 50`",
