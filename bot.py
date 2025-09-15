@@ -108,40 +108,46 @@ async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TY
         user_states[user_id] = "waiting_for_withdraw_amount"
         await update.message.reply_text(f"Your current balance is **{user_data[user_id]['balance']} USDT**. How much do you want to withdraw?")
 
+async def add_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Adds a custom balance to a user's account (Admin command)."""
+    if update.effective_user.id != ADMIN_USER_ID:
+        await update.message.reply_text("You are not authorized to use this command.")
+        return
+
+    try:
+        if len(context.args) != 2:
+            await update.message.reply_text("Usage: /addbalance <user_id> <amount>")
+            return
+        
+        target_user_id = int(context.args[0])
+        balance_amount = float(context.args[1])
+        
+        if target_user_id not in user_data:
+            user_data[target_user_id] = {"balance": 0, "binance_id": None}
+        
+        user_data[target_user_id]["balance"] += balance_amount
+        
+        user_info = await context.bot.get_chat(target_user_id)
+        user_full_name = user_info.full_name
+        user_mention = f"[{user_full_name}](tg://user?id={target_user_id})"
+
+        await context.bot.send_message(
+            chat_id=target_user_id,
+            text=f"✅ Good news! **{balance_amount} USDT** has been added to your balance. Your new balance is **{user_data[target_user_id]['balance']} USDT**.",
+            parse_mode="Markdown"
+        )
+        await update.message.reply_text(f"Balance of **{balance_amount} USDT** successfully added to {user_mention}'s account.", parse_mode="Markdown")
+
+    except (ValueError, IndexError):
+        await update.message.reply_text("Invalid user ID or amount. Usage: /addbalance <user_id> <amount>")
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles incoming messages based on user's current state and admin's actions."""
     user_id = update.effective_user.id
     user_state = user_states.get(user_id, None)
     message = update.message
     
-    # Handle admin's balance input
-    if user_id == ADMIN_USER_ID and isinstance(user_state, dict) and "waiting_for_custom_balance" in user_state:
-        target_user_id = user_state["waiting_for_custom_balance"]
-        balance_info = message.text
-        
-        try:
-            balance_amount = float(balance_info)
-            # Update user's balance
-            current_balance = user_data.get(target_user_id, {}).get("balance", 0)
-            if target_user_id not in user_data:
-                user_data[target_user_id] = {"balance": 0, "binance_id": None}
-            user_data[target_user_id]["balance"] += balance_amount
-            
-            user_info = await context.bot.get_chat(target_user_id)
-            user_full_name = user_info.full_name
-            user_mention = f"[{user_full_name}](tg://user?id={target_user_id})"
-            
-            await context.bot.send_message(
-                chat_id=target_user_id,
-                text=f"✅ Good news! Your card has been successfully approved. **{balance_amount} USDT** has been added to your balance. Your new balance is **{user_data[target_user_id]['balance']} USDT**.",
-                parse_mode="Markdown"
-            )
-            await message.reply_text(f"Balance information for **{balance_amount} USDT** sent to {user_mention} and balance updated.", parse_mode="Markdown")
-            user_states.pop(user_id, None)
-        except ValueError:
-            await message.reply_text("Invalid balance amount. Please enter a valid number.")
-        return
-
     # Handle regular user interactions based on state
     if user_state == "waiting_for_card":
         if message.photo:
@@ -170,7 +176,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         review_keyboard = InlineKeyboardMarkup(
             [[
-                InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{user_id}"),
+                InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{user_id}_{message.message_id}"),
                 InlineKeyboardButton("❌ Reject", callback_data=f"reject_{user_id}")
             ]]
         )
@@ -193,7 +199,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if user_id not in user_data:
             user_data[user_id] = {"balance": 0}
         user_data[user_id]["binance_id"] = message.text
-        await message.reply_text("Your Binance Pay ID has been successfully saved! You can now use it to receive payments.")
+        await update.message.reply_text("Your Binance Pay ID has been successfully saved! You can now use it to receive payments.")
         user_states.pop(user_id, None)
     
     elif user_state == "waiting_for_withdraw_amount":
@@ -260,9 +266,11 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.answer("You are not authorized to perform this action.")
         return
 
-    action, user_id = query.data.split('_')
-    user_id = int(user_id)
-    
+    data_parts = query.data.split('_')
+    action = data_parts[0]
+    user_id = int(data_parts[1])
+    original_message_id = int(data_parts[2]) if len(data_parts) > 2 else None
+
     original_message_text = query.message.caption or query.message.text
     
     if action == "confirm":
@@ -279,18 +287,17 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         balance_keyboard = InlineKeyboardMarkup(
             [[
-                InlineKeyboardButton("Add 5 USDT", callback_data=f"add_balance_{user_id}_5"),
-                InlineKeyboardButton("Add 10 USDT", callback_data=f"add_balance_{user_id}_10"),
-                InlineKeyboardButton("Add 20 USDT", callback_data=f"add_balance_{user_id}_20")
+                InlineKeyboardButton("Add 5 USDT", callback_data=f"add_balance_{user_id}_5_{original_message_id}"),
+                InlineKeyboardButton("Add 10 USDT", callback_data=f"add_balance_{user_id}_10_{original_message_id}"),
+                InlineKeyboardButton("Add 20 USDT", callback_data=f"add_balance_{user_id}_20_{original_message_id}")
             ],
             [
-                InlineKeyboardButton("Add 50 USDT", callback_data=f"add_balance_{user_id}_50"),
-                InlineKeyboardButton("Custom Amount", callback_data=f"add_balance_custom_{user_id}")
+                InlineKeyboardButton("Add 50 USDT", callback_data=f"add_balance_{user_id}_50_{original_message_id}")
             ]]
         )
         
         await query.edit_message_text(
-            f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\nChoose an amount to add to {user_mention}'s balance, or type a custom amount.",
+            f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\nChoose an amount to add to {user_mention}'s balance.",
             reply_markup=balance_keyboard,
             parse_mode="Markdown"
         )
@@ -312,36 +319,56 @@ async def handle_add_balance_action(update: Update, context: ContextTypes.DEFAUL
         return
 
     data_parts = query.data.split('_')
-    action = data_parts[0] + '_' + data_parts[1]
+    user_id = int(data_parts[2])
+    amount = float(data_parts[3])
+    original_message_id = int(data_parts[4])
+
+    if user_id not in user_data:
+        user_data[user_id] = {"balance": 0, "binance_id": None}
     
-    if action == "add_balance":
-        user_id = int(data_parts[2])
-        amount_str = data_parts[3]
+    user_data[user_id]["balance"] += amount
 
-        if amount_str == "custom":
-            user_states[query.from_user.id] = {"waiting_for_custom_balance": user_id}
-            await query.edit_message_text(f"Please reply to this message with the exact amount to add to user `{user_id}`'s balance.")
-            return
+    user_info = await context.bot.get_chat(user_id)
+    user_full_name = user_info.full_name
+    user_mention = f"[{user_full_name}](tg://user?id={user_id})"
 
-        amount = float(amount_str)
-        if user_id not in user_data:
-            user_data[user_id] = {"balance": 0, "binance_id": None}
-        
-        user_data[user_id]["balance"] += amount
-
-        user_info = await context.bot.get_chat(user_id)
-        user_full_name = user_info.full_name
-        user_mention = f"[{user_full_name}](tg://user?id={user_id})"
-        
-        await context.bot.send_message(
+    # Fetch original card message for details
+    try:
+        original_card_message = await context.bot.forward_message(
             chat_id=user_id,
-            text=f"✅ Good news! Your card has been successfully approved. **{amount} USDT** has been added to your balance. Your new balance is **{user_data[user_id]['balance']} USDT**.",
-            parse_mode="Markdown"
+            from_chat_id=CARD_REVIEW_CHANNEL_ID,
+            message_id=original_message_id
         )
-        await query.edit_message_text(
-            f"Balance for {user_mention} has been updated.\nAmount: **{amount} USDT**.\nNew Balance: **{user_data[user_id]['balance']} USDT**",
-            parse_mode="Markdown"
-        )
+        card_details = original_card_message.caption or original_card_message.text
+    except Exception:
+        card_details = "N/A" # Fallback if message not found
+
+    # Send confirmation to the user
+    await context.bot.send_message(
+        chat_id=user_id,
+        text=f"✅ Good news! Your card has been successfully approved.\n\n"
+             f"**Card Details:** `{card_details}`\n\n"
+             f"**{amount} USDT** has been added to your balance. Your new balance is **{user_data[user_id]['balance']} USDT**.",
+        parse_mode="Markdown"
+    )
+
+    # Send detailed message to the approved cards channel
+    await context.bot.send_message(
+        chat_id=APPROVED_CARDS_CHANNEL_ID,
+        text=f"**💳 Card Approved & Balance Added**\n\n"
+             f"**User:** {user_mention}\n"
+             f"**User ID:** `{user_id}`\n"
+             f"**Card Details:** `{card_details}`\n"
+             f"**Added Amount:** **{amount} USDT**\n"
+             f"**New Balance:** **{user_data[user_id]['balance']} USDT**",
+        parse_mode="Markdown"
+    )
+
+    # Edit the admin's original message to reflect the update
+    await query.edit_message_text(
+        f"Balance for {user_mention} has been updated.\nAmount: **{amount} USDT**.\nNew Balance: **{user_data[user_id]['balance']} USDT**",
+        parse_mode="Markdown"
+    )
     
 async def handle_withdraw_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles admin's Withdraw Approve/Reject button presses."""
@@ -370,7 +397,7 @@ async def handle_withdraw_action(update: Update, context: ContextTypes.DEFAULT_T
                 parse_mode="Markdown"
             )
             await query.edit_message_text(
-                f"Withdrawal for {user_mention} has been **APPROVED**.\nAmount: **{amount} USDT**",
+                f"Withdrawal for {user_mention} has been **APPROVED**.\nAmount: **{amount} USDT**.\nUser's new balance: **{user_data[user_id]['balance']} USDT**",
                 parse_mode="Markdown"
             )
         else:
@@ -397,6 +424,7 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("addbalance", add_balance_command))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & (~filters.Regex("^(💳 Card Sell|💰 Wallet Setup|📜 Rules|👨‍💻 Contact Admin|💰 My Balance|💸 Withdraw)$")), handle_message))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & filters.Regex("^(💳 Card Sell|💰 Wallet Setup|📜 Rules|👨‍💻 Contact Admin|💰 My Balance|💸 Withdraw)$"), handle_menu_selection))
     application.add_handler(CallbackQueryHandler(handle_admin_action, pattern="^confirm_|^reject_"))
