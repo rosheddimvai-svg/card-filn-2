@@ -31,6 +31,9 @@ WITHDRAW_CHANNEL_ID = "-1002323042564"
 # --- In-memory state for each user ---
 user_states = {}
 user_data = {}  # A simple dictionary to store user balances and withdrawal requests
+submitted_cards = set() # A set to store submitted card details to prevent duplicates.
+# NOTE: This data is in-memory and will be lost if the bot restarts.
+# For a permanent solution, a database would be required.
 
 # --- Card and Wallet format validation ---
 CARD_FORMAT_REGEX = r'^\d{16}\|\d{2}\|\d{4}\|\d{3}$'
@@ -165,9 +168,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await message.reply_text("Card submission cancelled.", reply_markup=main_menu_keyboard)
             return
         
+        # Check for correct card format
         if not re.match(CARD_FORMAT_REGEX, message.text):
             await message.reply_text("The card details you sent are in the wrong format. Please send them again using the correct format.")
             return
+            
+        # Check if the card has already been submitted
+        if message.text in submitted_cards:
+            await message.reply_text("This card has already been submitted for review. You cannot submit it again.")
+            return
+
+        # Add the new card to the set of submitted cards
+        submitted_cards.add(message.text)
 
         user_full_name = message.from_user.full_name
         user_mention = f"[{user_full_name}](tg://user?id={user_id})"
@@ -284,18 +296,20 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_full_name = user_info.full_name
         user_mention = f"[{user_full_name}](tg://user?id={user_id})"
 
-        # Generate 300 inline keyboard buttons from 1 to 300
-        balance_buttons = []
-        for i in range(1, 301):
-            balance_buttons.append(InlineKeyboardButton(f"Add {i} USDT", callback_data=f"add_balance_{user_id}_{i}_{card_details}"))
-
-        # Arrange buttons in a grid, 4 per row
-        rows = [balance_buttons[i:i + 4] for i in range(0, len(balance_buttons), 4)]
-        
-        # Add the custom amount button at the end
-        rows.append([InlineKeyboardButton("Custom Amount", callback_data=f"add_balance_custom_{user_id}_{card_details}")])
-        
-        balance_keyboard = InlineKeyboardMarkup(rows)
+        # A more limited set of balance options to avoid "Reply markup is too long" error
+        balance_keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Add 5 USDT", callback_data=f"add_balance_{user_id}_5_{card_details}"),
+                InlineKeyboardButton("Add 10 USDT", callback_data=f"add_balance_{user_id}_10_{card_details}")
+            ],
+            [
+                InlineKeyboardButton("Add 20 USDT", callback_data=f"add_balance_{user_id}_20_{card_details}"),
+                InlineKeyboardButton("Add 50 USDT", callback_data=f"add_balance_{user_id}_50_{card_details}")
+            ],
+            [
+                InlineKeyboardButton("Custom Amount", callback_data=f"add_balance_custom_{user_id}_{card_details}")
+            ]
+        ])
         
         try:
             await query.edit_message_text(
@@ -343,7 +357,18 @@ async def handle_add_balance_action(update: Update, context: ContextTypes.DEFAUL
         
         if amount_str == "custom":
             user_states[query.from_user.id] = {"waiting_for_custom_balance": user_id, "card_details": card_details}
-            await query.edit_message_text(f"Please reply to this message with the exact amount to add to user `{user_id}`'s balance.")
+            
+            try:
+                await query.edit_message_text(
+                    f"Please reply to this message with the exact amount to add to user `{user_id}`'s balance.",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"Failed to edit message for custom amount action: {e}")
+                await context.bot.send_message(
+                    chat_id=query.from_user.id,
+                    text=f"Please reply to this message with the exact amount to add to user `{user_id}`'s balance."
+                )
             return
 
         amount = float(amount_str)
