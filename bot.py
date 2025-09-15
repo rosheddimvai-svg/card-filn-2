@@ -144,7 +144,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         review_keyboard = InlineKeyboardMarkup(
             [[
                 InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{user_id}_{message.text}"),
-                InlineKeyboardButton("❌ Reject", callback_data=f"reject_{user_id}")
+                InlineKeyboardButton("❌ Reject", callback_data=f"reject_{user_id}_{message.text}")
             ]]
         )
         
@@ -157,7 +157,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 parse_mode="Markdown"
             )
             # Updated confirmation message for the user
-            await message.reply_text("আপনার কার্ড সাবমিট সম্পূর্ণ হয়েছে, আমরা শীঘ্রই এটি যাচাই করে আপনাকে জানাবো।")
+            await message.reply_text("Your card submission is complete. We will check it soon and let you know.")
             user_states.pop(user_id, None)
         except Exception as e:
             logger.error(f"Failed to send card submission to admin channel. Error: {e}", exc_info=True)
@@ -284,6 +284,7 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.answer("You are not authorized to perform this action.")
         return
 
+    # Updated data parsing to handle card details in both confirm and reject callbacks
     data_parts = query.data.split('_', 2)
     action = data_parts[0]
     user_id = int(data_parts[1])
@@ -298,34 +299,36 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         # Forward the original card submission to the public sales channel
         try:
-            # Re-fetch the original message for forwarding
+            # NOTE: The bot must be an admin in the CARD_REVIEW_CHANNEL_ID with 'Manage messages'
+            # permission to re-fetch and forward the message successfully.
             original_message = await context.bot.get_message(
                 chat_id=CARD_REVIEW_CHANNEL_ID,
                 message_id=query.message.message_id
             )
+            # The bot also needs 'Post messages' permission in ADMIN_BROADCAST_CHANNEL_ID
             await original_message.forward(chat_id=ADMIN_BROADCAST_CHANNEL_ID)
             
             await query.edit_message_text(
-                f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\n**User:** {user_mention} \n**User ID:** `{user_id}`\n\nকার্ডটি বিক্রির জন্য দ্বিতীয় চ্যানেলে ফরোয়ার্ড করা হয়েছে।",
+                f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\n**User:** {user_mention} \n**User ID:** `{user_id}`\n\n**Card:** `{card_details}`\n\nThe card has been forwarded to the sales channel.",
                 parse_mode="Markdown"
             )
 
         except Exception as e:
             logger.error(f"Failed to forward message or edit confirmation. Error: {e}", exc_info=True)
             await query.edit_message_text(
-                f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\n**User:** {user_mention} \n**User ID:** `{user_id}`\n\nকার্ডটি অ্যাপ্রুভ করা হয়েছে, কিন্তু ফরোয়ার্ড করার সময় একটি সমস্যা হয়েছে।",
+                f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\n**User:** {user_mention} \n**User ID:** `{user_id}`\n\n**Card:** `{card_details}`\n\nThe card was approved, but there was an error forwarding it. Please check the bot's permissions.",
                 parse_mode="Markdown"
             )
             
     elif action == "reject":
         try:
-            # Send rejection message to the user
+            # Send rejection message to the user with the specific card details
             await context.bot.send_message(
                 chat_id=user_id,
-                text="❌ আপনার কার্ডটি বাতিল করা হয়েছে। অনুগ্রহ করে বিস্তারিত দেখে আবার চেষ্টা করুন।"
+                text=f"❌ Your card submission `{card_details}` has been rejected. Please review the details and try again."
             )
             # Edit the original message in the review channel to show rejection status
-            await query.edit_message_text(f"{original_message_text}\n\n**Status: ❌ REJECTED**\n\nএই কার্ডটি বাতিল করা হয়েছে।")
+            await query.edit_message_text(f"{original_message_text}\n\n**Status: ❌ REJECTED**\n\nThis card has been deleted.")
 
         except Exception as e:
             logger.error(f"Failed to handle reject action: {e}", exc_info=True)
