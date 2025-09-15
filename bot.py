@@ -23,8 +23,7 @@ logger = logging.getLogger(__name__)
 # --- Configuration (Your provided details) ---
 BOT_TOKEN = "7845699149:AAEEKpzHFt5gd6LbApfXSsE8de64f8IaGx0"
 ADMIN_USER_ID = int("7574558427")
-CARD_REVIEW_CHANNEL_ID = "-1003036699455"
-APPROVED_CARDS_CHANNEL_ID = "-1002944346537"
+CARD_REVIEW_CHANNEL_ID = "-4659397523" # Updated with the new chat ID
 ADMIN_BROADCAST_CHANNEL_ID = "-1003018121134"
 WITHDRAW_CHANNEL_ID = "-1002323042564"
 
@@ -287,21 +286,12 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_info = await context.bot.get_chat(user_id)
         user_full_name = user_info.full_name
         user_mention = f"[{user_full_name}](tg://user?id={user_id})"
-
-        balance_keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Add 5 USDT", callback_data=f"add_balance_{user_id}_5_{card_details}"),
-                InlineKeyboardButton("Add 10 USDT", callback_data=f"add_balance_{user_id}_10_{card_details}")
-            ],
-            [
-                InlineKeyboardButton("Add 20 USDT", callback_data=f"add_balance_{user_id}_20_{card_details}"),
-                InlineKeyboardButton("Add 50 USDT", callback_data=f"add_balance_{user_id}_50_{card_details}")
-            ],
-        ])
+        
+        # We will directly add balance using the new command method now.
+        # This will simplify the process and avoid the complex inline button chain.
         
         await query.edit_message_text(
-            f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\nChoose an amount to add to {user_mention}'s balance.",
-            reply_markup=balance_keyboard,
+            f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\n**User:** {user_mention} \n**User ID:** `{user_id}`\n\nPlease use the `/add_balance` command to add balance to the user's account.\n\nExample: `/add_balance {user_id} 50`",
             parse_mode="Markdown"
         )
             
@@ -320,55 +310,9 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
 
 async def handle_add_balance_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles admin's preset balance buttons."""
-    query = update.callback_query
-    await query.answer()
+    """This handler is no longer needed but kept to avoid errors."""
+    await update.callback_query.answer("This action is no longer supported. Please use the /add_balance command.")
 
-    if query.from_user.id != ADMIN_USER_ID:
-        await query.answer("You are not authorized to perform this action.")
-        return
-
-    data_parts = query.data.split('_', 4)
-    action = data_parts[0] + '_' + data_parts[1]
-    
-    if action == "add_balance":
-        user_id = int(data_parts[2])
-        amount_str = data_parts[3]
-        card_details = data_parts[4]
-        
-        amount = float(amount_str)
-        if user_id not in user_data:
-            user_data[user_id] = {"balance": 0}
-        
-        user_data[user_id]["balance"] += amount
-
-        user_info = await context.bot.get_chat(user_id)
-        user_full_name = user_info.full_name
-        user_mention = f"[{user_full_name}](tg://user?id={user_id})"
-        
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=f"✅ Good news! Your card has been successfully approved.\n\n"
-                 f"**Card Details:** `{card_details}`\n\n"
-                 f"**{amount} USDT** has been added to your balance. Your new balance is **{user_data[user_id]['balance']} USDT**.",
-            parse_mode="Markdown"
-        )
-
-        await context.bot.send_message(
-            chat_id=APPROVED_CARDS_CHANNEL_ID,
-            text=f"**💳 Card Approved & Balance Added**\n\n"
-                 f"**User:** {user_mention}\n"
-                 f"**User ID:** `{user_id}`\n"
-                 f"**Card Details:** `{card_details}`\n"
-                 f"**Added Amount:** **{amount} USDT**\n"
-                 f"**New Balance:** **{user_data[user_id]['balance']} USDT**",
-            parse_mode="Markdown"
-        )
-
-        await query.edit_message_text(
-            f"Balance for {user_mention} has been updated.\nAmount: **{amount} USDT**.\nNew Balance: **{user_data[user_id]['balance']} USDT**",
-            parse_mode="Markdown"
-        )
     
 async def handle_withdraw_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles admin's Withdraw Approve/Reject button presses."""
