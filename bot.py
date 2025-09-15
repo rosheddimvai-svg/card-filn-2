@@ -297,15 +297,16 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_full_name = user_info.full_name
         user_mention = f"[{user_full_name}](tg://user?id={user_id})"
 
-        # Forward the original card submission to the public sales channel
+        original_message = None
         try:
-            # NOTE: The bot must be an admin in the CARD_REVIEW_CHANNEL_ID with 'Manage messages'
-            # permission to re-fetch and forward the message successfully.
+            # Step 1: Attempt to retrieve the original message.
+            # This requires 'Manage messages' permission in the review channel.
             original_message = await context.bot.get_message(
                 chat_id=CARD_REVIEW_CHANNEL_ID,
                 message_id=query.message.message_id
             )
-            # The bot also needs 'Post messages' permission in ADMIN_BROADCAST_CHANNEL_ID
+            # Step 2: Forward the message.
+            # This requires 'Post messages' permission in the broadcast channel.
             await original_message.forward(chat_id=ADMIN_BROADCAST_CHANNEL_ID)
             
             await query.edit_message_text(
@@ -314,11 +315,17 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
 
         except Exception as e:
-            logger.error(f"Failed to forward message or edit confirmation. Error: {e}", exc_info=True)
-            await query.edit_message_text(
-                f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\n**User:** {user_mention} \n**User ID:** `{user_id}`\n\n**Card:** `{card_details}`\n\nThe card was approved, but there was an error forwarding it. Please check the bot's permissions.",
-                parse_mode="Markdown"
-            )
+            logger.error(f"Forwarding error for user {user_id}: {e}", exc_info=True)
+            if original_message is None:
+                await query.edit_message_text(
+                    f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\n**User:** {user_mention} \n**User ID:** `{user_id}`\n\n**Card:** `{card_details}`\n\nError: Failed to retrieve the original message. Please check the bot's 'Manage messages' permission in the review channel.",
+                    parse_mode="Markdown"
+                )
+            else:
+                await query.edit_message_text(
+                    f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\n**User:** {user_mention} \n**User ID:** `{user_id}`\n\n**Card:** `{card_details}`\n\nError: The card was approved but failed to forward. Please check the bot's 'Post messages' permission in the sales channel.",
+                    parse_mode="Markdown"
+                )
             
     elif action == "reject":
         try:
