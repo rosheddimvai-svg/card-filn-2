@@ -284,13 +284,13 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_full_name = user_info.full_name
         user_mention = f"[{user_full_name}](tg://user?id={user_id})"
 
-        # Generate a list of inline keyboard buttons from 1 to 300
+        # Generate 300 inline keyboard buttons from 1 to 300
         balance_buttons = []
         for i in range(1, 301):
             balance_buttons.append(InlineKeyboardButton(f"Add {i} USDT", callback_data=f"add_balance_{user_id}_{i}_{card_details}"))
 
-        # Arrange buttons in a grid, e.g., 5 per row
-        rows = [balance_buttons[i:i + 5] for i in range(0, len(balance_buttons), 5)]
+        # Arrange buttons in a grid, 4 per row
+        rows = [balance_buttons[i:i + 4] for i in range(0, len(balance_buttons), 4)]
         
         # Add the custom amount button at the end
         rows.append([InlineKeyboardButton("Custom Amount", callback_data=f"add_balance_custom_{user_id}_{card_details}")])
