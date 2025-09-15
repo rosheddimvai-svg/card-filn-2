@@ -232,9 +232,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 # --- Admin Custom Balance Command Handler ---
 async def add_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles the /add_balance <user_id> <amount> command for admins."""
-    if update.effective_user.id != ADMIN_USER_ID:
-        await update.message.reply_text("You are not authorized to use this command.")
+    """Handles the /add_balance <user_id> <amount> command for admins in a specific channel."""
+    # Check if the command is sent from the designated channel
+    if str(update.effective_chat.id) != WITHDRAW_CHANNEL_ID:
+        await update.message.reply_text("This command can only be used in the designated withdrawal channel.")
         return
 
     try:
@@ -259,6 +260,7 @@ async def add_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode="Markdown"
         )
         
+        # Send a confirmation message to the user
         await context.bot.send_message(
             chat_id=target_user_id,
             text=f"✅ **{balance_amount} USDT** has been added to your balance by the admin. Your new balance is **{user_data[target_user_id]['balance']} USDT**.",
@@ -270,52 +272,6 @@ async def add_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         logger.error(f"Error in add_balance_command: {e}", exc_info=True)
         await update.message.reply_text("An unexpected error occurred while adding the balance.")
-
-# --- New User-requested Top-up command Handler ---
-async def request_topup_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Allows a user to request a balance top-up for admin approval."""
-    user_id = update.effective_user.id
-    try:
-        if len(context.args) != 1:
-            await update.message.reply_text("Please specify the amount you want to top up. Example: `/request_topup 500`")
-            return
-        
-        amount = float(context.args[0])
-        if amount <= 0:
-            await update.message.reply_text("Please request a valid amount greater than zero.")
-            return
-
-        user_full_name = update.effective_user.full_name
-        user_mention = f"[{user_full_name}](tg://user?id={user_id})"
-        user_username = f"@{update.effective_user.username}" if update.effective_user.username else "N/A"
-
-        topup_message = (
-            f"**💸 New Top-up Request**\n\n"
-            f"**User:** {user_mention} ({user_username})\n"
-            f"**User ID:** `{user_id}`\n"
-            f"**Requested Amount:** **{amount} USDT**"
-        )
-
-        topup_keyboard = InlineKeyboardMarkup(
-            [[
-                InlineKeyboardButton("✅ Approve Top-up", callback_data=f"topup_approve_{user_id}_{amount}"),
-                InlineKeyboardButton("❌ Reject Top-up", callback_data=f"topup_reject_{user_id}")
-            ]]
-        )
-
-        await context.bot.send_message(
-            chat_id=ADMIN_BROADCAST_CHANNEL_ID,
-            text=topup_message,
-            reply_markup=topup_keyboard,
-            parse_mode="Markdown"
-        )
-        await update.message.reply_text("Your top-up request has been sent to the admin. We will notify you once it's approved.")
-
-    except (ValueError, IndexError):
-        await update.message.reply_text("Invalid amount. Please specify a number. Example: `/request_topup 500`")
-    except Exception as e:
-        logger.error(f"Error in request_topup_command: {e}", exc_info=True)
-        await update.message.reply_text("An unexpected error occurred while processing your request.")
 
 
 # --- Admin Callback Handler ---
@@ -358,11 +314,6 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
                 chat_id=query.from_user.id,
                 text=f"Error handling reject action. Please check the bot logs. Error: {e}"
             )
-
-async def handle_add_balance_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """This handler is no longer needed but kept to avoid errors."""
-    await update.callback_query.answer("This action is no longer supported. Please use the /add_balance command.")
-
     
 async def handle_withdraw_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles admin's Withdraw Approve/Reject button presses."""
@@ -374,9 +325,11 @@ async def handle_withdraw_action(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     try:
-        action, _, user_id_str, amount_str = query.data.split('_', 3)
-        user_id = int(user_id_str)
-        amount = float(amount_str)
+        # Fixed the callback data parsing
+        data_parts = query.data.split('_')
+        action = data_parts[1]
+        user_id = int(data_parts[2])
+        amount = float(data_parts[3])
 
         user_info = await context.bot.get_chat(user_id)
         user_full_name = user_info.full_name
@@ -416,60 +369,12 @@ async def handle_withdraw_action(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_text(f"An unexpected error occurred while processing the withdrawal request.")
 
 
-async def handle_topup_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles admin's Approve/Reject button presses for top-up requests."""
-    query = update.callback_query
-    await query.answer()
-
-    if query.from_user.id != ADMIN_USER_ID:
-        await query.answer("You are not authorized to perform this action.")
-        return
-
-    try:
-        action_type, action, user_id_str, amount_str = query.data.split('_', 3)
-        user_id = int(user_id_str)
-        amount = float(amount_str)
-
-        user_info = await context.bot.get_chat(user_id)
-        user_full_name = user_info.full_name
-        user_mention = f"[{user_full_name}](tg://user?id={user_id})"
-
-        if action == "approve":
-            if user_id not in user_data:
-                user_data[user_id] = {"balance": 0}
-            user_data[user_id]["balance"] += amount
-            
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"✅ Your top-up request for **{amount} USDT** has been approved! Your new balance is **{user_data[user_id]['balance']} USDT**.",
-                parse_mode="Markdown"
-            )
-            await query.edit_message_text(
-                f"Top-up request for {user_mention} has been **APPROVED**.\nAmount: **{amount} USDT**.\nUser's new balance: **{user_data[user_id]['balance']} USDT**",
-                parse_mode="Markdown"
-            )
-        elif action == "reject":
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"❌ Your top-up request for **{amount} USDT** has been rejected by the admin. Please contact support for more details."
-            )
-            await query.edit_message_text(
-                f"Top-up request for {user_mention} has been **REJECTED**.\nAmount: **{amount} USDT**",
-                parse_mode="Markdown"
-            )
-
-    except Exception as e:
-        logger.error(f"Error handling topup action: {e}", exc_info=True)
-        await query.edit_message_text(f"An unexpected error occurred while processing the top-up request.")
-
-
 def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     # Handlers for commands
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("add_balance", add_balance_command)) 
-    application.add_handler(CommandHandler("request_topup", request_topup_command)) # New handler
 
     # Handlers for messages
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & (~filters.Regex("^(💳 Card Sell|📜 Rules|👨‍💻 Contact Admin|💰 My Balance|💸 Withdraw)$")), handle_message))
@@ -477,10 +382,8 @@ def main():
 
     # Handlers for inline keyboard button presses
     application.add_handler(CallbackQueryHandler(handle_admin_action, pattern="^confirm_|^reject_"))
-    application.add_handler(CallbackQueryHandler(handle_add_balance_action, pattern="^add_balance_"))
     application.add_handler(CallbackQueryHandler(handle_withdraw_action, pattern="^withdraw_approve_|^withdraw_reject_"))
-    application.add_handler(CallbackQueryHandler(handle_topup_action, pattern="^topup_")) # New handler
-
+    
     application.run_polling(allowed_updates=Update.ALL_TYPES)
     
 if __name__ == '__main__':
