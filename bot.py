@@ -209,7 +209,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         except ValueError:
             await message.reply_text("Please enter a valid number for the withdrawal amount.")
         
-    elif update.effective_user.id != ADMIN_USER_ID and not isinstance(user_state, dict):
+    elif update.effective_user.id != ADMIN_USER_ID:
         user_mention = f"[{update.effective_user.full_name}](tg://user?id={user_id})"
         message_text = f"**New message from user:** {user_mention}\n" \
                        f"**User ID:** `{user_id}`\n" \
@@ -221,6 +221,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             parse_mode="Markdown"
         )
         await update.message.reply_text("Your message has been sent to the admin.")
+    else:
+        # A simple response for unhandled messages
+        await update.message.reply_text("Sorry, I don't understand that command. Please use one of the menu buttons.")
 
 
 # --- Admin Custom Balance Command Handler ---
