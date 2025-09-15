@@ -107,163 +107,162 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_state = user_states.get(user_id, None)
     message = update.message
     
-    try:
-        # --- Handle Admin's custom balance input (FIXED) ---
-        if user_id == ADMIN_USER_ID and isinstance(user_state, dict) and "waiting_for_custom_balance" in user_state:
-            target_user_id = user_state["waiting_for_custom_balance"]
-            card_details = user_state.get("card_details", "N/A")
-            balance_info = message.text
+    # --- Handle Admin's custom balance input ---
+    if user_id == ADMIN_USER_ID and isinstance(user_state, dict) and "waiting_for_custom_balance" in user_state:
+        target_user_id = user_state["waiting_for_custom_balance"]
+        card_details = user_state.get("card_details", "N/A")
+        balance_info = message.text
 
-            try:
-                balance_amount = float(balance_info)
-                if target_user_id not in user_data:
-                    user_data[target_user_id] = {"balance": 0}
-                user_data[target_user_id]["balance"] += balance_amount
+        try:
+            balance_amount = float(balance_info)
+            if target_user_id not in user_data:
+                user_data[target_user_id] = {"balance": 0}
+            user_data[target_user_id]["balance"] += balance_amount
 
-                user_info = await context.bot.get_chat(target_user_id)
-                user_full_name = user_info.full_name
-                user_mention = f"[{user_full_name}](tg://user?id={target_user_id})"
+            user_info = await context.bot.get_chat(target_user_id)
+            user_full_name = user_info.full_name
+            user_mention = f"[{user_full_name}](tg://user?id={target_user_id})"
 
-                await context.bot.send_message(
-                    chat_id=target_user_id,
-                    text=f"✅ Good news! Your card has been successfully approved.\n\n"
-                         f"**Card Details:** `{card_details}`\n\n"
-                         f"**{balance_amount} USDT** has been added to your balance. Your new balance is **{user_data[target_user_id]['balance']} USDT**.",
-                    parse_mode="Markdown"
-                )
-
-                await context.bot.send_message(
-                    chat_id=APPROVED_CARDS_CHANNEL_ID,
-                    text=f"**💳 Card Approved & Balance Added**\n\n"
-                         f"**User:** {user_mention}\n"
-                         f"**User ID:** `{target_user_id}`\n"
-                         f"**Card Details:** `{card_details}`\n"
-                         f"**Added Amount:** **{balance_amount} USDT**\n"
-                         f"**New Balance:** **{user_data[target_user_id]['balance']} USDT**",
-                    parse_mode="Markdown"
-                )
-                await message.reply_text(f"Balance of **{balance_amount} USDT** successfully added to {user_mention}'s account.", parse_mode="Markdown")
-                user_states.pop(user_id, None)
-            except ValueError:
-                await message.reply_text("Invalid balance amount. Please enter a valid number.")
-            return
-
-        # --- Handle regular user interactions based on state ---
-        if user_state == "waiting_for_card":
-            if message.photo:
-                await message.reply_text("Please send the card details as a text message, not a photo. Photos are not accepted for verification.")
-                return
-
-            if message.text.lower() == "cancel":
-                user_states.pop(user_id, None)
-                await message.reply_text("Card submission cancelled.", reply_markup=main_menu_keyboard)
-                return
-            
-            # Check for correct card format
-            if not re.match(CARD_FORMAT_REGEX, message.text):
-                await message.reply_text("The card details you sent are in the wrong format. Please send them again using the correct format.")
-                return
-                
-            # Check if the card has already been submitted
-            if message.text in submitted_cards:
-                await message.reply_text("This card has already been submitted for review. You cannot submit it again.")
-                return
-
-            # Add the new card to the set of submitted cards
-            submitted_cards.add(message.text)
-
-            user_full_name = message.from_user.full_name
-            user_mention = f"[{user_full_name}](tg://user?id={user_id})"
-            user_username = f"@{message.from_user.username}" if message.from_user.username else "N/A"
-            
-            caption_text = (
-                f"**💳 New Card Submission**\n\n"
-                f"**User:** {user_mention} ({user_username})\n"
-                f"**User ID:** `{user_id}`\n\n"
-                f"**Card Details:**\n`{message.text}`"
-            )
-            
-            review_keyboard = InlineKeyboardMarkup(
-                [[
-                    InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{user_id}_{message.text}"),
-                    InlineKeyboardButton("❌ Reject", callback_data=f"reject_{user_id}")
-                ]]
-            )
-            
             await context.bot.send_message(
-                chat_id=CARD_REVIEW_CHANNEL_ID,
-                text=caption_text,
-                reply_markup=review_keyboard,
+                chat_id=target_user_id,
+                text=f"✅ Good news! Your card has been successfully approved.\n\n"
+                     f"**Card Details:** `{card_details}`\n\n"
+                     f"**{balance_amount} USDT** has been added to your balance. Your new balance is **{user_data[target_user_id]['balance']} USDT**.",
                 parse_mode="Markdown"
             )
-                
-            await message.reply_text("Your card details have been sent for review. We will notify you of the result.")
+
+            await context.bot.send_message(
+                chat_id=APPROVED_CARDS_CHANNEL_ID,
+                text=f"**💳 Card Approved & Balance Added**\n\n"
+                     f"**User:** {user_mention}\n"
+                     f"**User ID:** `{target_user_id}`\n"
+                     f"**Card Details:** `{card_details}`\n"
+                     f"**Added Amount:** **{balance_amount} USDT**\n"
+                     f"**New Balance:** **{user_data[target_user_id]['balance']} USDT**",
+                parse_mode="Markdown"
+            )
+            await message.reply_text(f"Balance of **{balance_amount} USDT** successfully added to {user_mention}'s account.", parse_mode="Markdown")
             user_states.pop(user_id, None)
+        except ValueError:
+            await message.reply_text("Invalid balance amount. Please enter a valid number.")
+        return
+
+    # --- Handle regular user interactions based on state ---
+    if user_state == "waiting_for_card":
+        if message.photo:
+            await message.reply_text("Please send the card details as a text message, not a photo. Photos are not accepted for verification.")
+            return
+
+        if message.text.lower() == "cancel":
+            user_states.pop(user_id, None)
+            await message.reply_text("Card submission cancelled.", reply_markup=main_menu_keyboard)
+            return
+        
+        # Check for correct card format
+        if not re.match(CARD_FORMAT_REGEX, message.text):
+            await message.reply_text("The card details you sent are in the wrong format. Please send them again using the correct format.")
+            return
             
-        # --- Withdrawal handlers (FIXED) ---
-        elif user_state == "waiting_for_withdraw_address":
-            withdraw_address = message.text
-            user_states[user_id] = {"state": "waiting_for_withdraw_amount", "withdraw_address": withdraw_address}
-            await message.reply_text(f"Your withdrawal address is saved as:\n`{withdraw_address}`\n\nNow, please send the amount you want to withdraw.")
+        # Check if the card has already been submitted
+        if message.text in submitted_cards:
+            await message.reply_text("This card has already been submitted for review. You cannot submit it again.")
+            return
 
-        elif isinstance(user_state, dict) and user_state.get("state") == "waiting_for_withdraw_amount":
-            withdraw_address = user_state.get("withdraw_address")
-            try:
-                amount = float(message.text)
-                current_balance = user_data.get(user_id, {}).get("balance", 0)
+        # Add the new card to the set of submitted cards
+        submitted_cards.add(message.text)
+
+        user_full_name = message.from_user.full_name
+        user_mention = f"[{user_full_name}](tg://user?id={user_id})"
+        user_username = f"@{message.from_user.username}" if message.from_user.username else "N/A"
+        
+        caption_text = (
+            f"**💳 New Card Submission**\n\n"
+            f"**User:** {user_mention} ({user_username})\n"
+            f"**User ID:** `{user_id}`\n\n"
+            f"**Card Details:**\n`{message.text}`"
+        )
+        
+        review_keyboard = InlineKeyboardMarkup(
+            [[
+                InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{user_id}_{message.text}"),
+                InlineKeyboardButton("❌ Reject", callback_data=f"reject_{user_id}")
+            ]]
+        )
+        
+        await context.bot.send_message(
+            chat_id=CARD_REVIEW_CHANNEL_ID,
+            text=caption_text,
+            reply_markup=review_keyboard,
+            parse_mode="Markdown"
+        )
+            
+        await message.reply_text("Your card details have been sent for review. We will notify you of the result.")
+        user_states.pop(user_id, None)
+        
+    # --- Withdrawal handlers ---
+    elif user_state == "waiting_for_withdraw_address":
+        withdraw_address = message.text
+        user_states[user_id] = {"state": "waiting_for_withdraw_amount", "withdraw_address": withdraw_address}
+        await message.reply_text(f"Your withdrawal address is saved as:\n`{withdraw_address}`\n\nNow, please send the amount you want to withdraw.")
+
+    elif isinstance(user_state, dict) and user_state.get("state") == "waiting_for_withdraw_amount":
+        withdraw_address = user_state.get("withdraw_address")
+        try:
+            amount = float(message.text)
+            current_balance = user_data.get(user_id, {}).get("balance", 0)
+            
+            if amount <= 0:
+                await message.reply_text("Please enter a valid amount greater than zero.")
+            elif amount > current_balance:
+                await message.reply_text(f"You don't have enough balance. Your current balance is **{current_balance} USDT**.", parse_mode="Markdown")
+            else:
+                user_full_name = message.from_user.full_name
+                user_mention = f"[{user_full_name}](tg://user?id={user_id})"
                 
-                if amount <= 0:
-                    await message.reply_text("Please enter a valid amount greater than zero.")
-                elif amount > current_balance:
-                    await message.reply_text(f"You don't have enough balance. Your current balance is **{current_balance} USDT**.", parse_mode="Markdown")
-                else:
-                    user_full_name = message.from_user.full_name
-                    user_mention = f"[{user_full_name}](tg://user?id={user_id})"
-                    
-                    withdraw_message = (
-                        f"**💰 New Withdrawal Request**\n\n"
-                        f"**User:** {user_mention}\n"
-                        f"**User ID:** `{user_id}`\n"
-                        f"**Amount:** **{amount} USDT**\n"
-                        f"**Withdrawal Address:** `{withdraw_address}`"
-                    )
-                    
-                    withdraw_keyboard = InlineKeyboardMarkup(
-                        [[
-                            InlineKeyboardButton("✅ Approve", callback_data=f"withdraw_approve_{user_id}_{amount}"),
-                            InlineKeyboardButton("❌ Reject", callback_data=f"withdraw_reject_{user_id}_{amount}")
-                        ]]
-                    )
-
+                withdraw_message = (
+                    f"**💰 New Withdrawal Request**\n\n"
+                    f"**User:** {user_mention}\n"
+                    f"**User ID:** `{user_id}`\n"
+                    f"**Amount:** **{amount} USDT**\n"
+                    f"**Withdrawal Address:** `{withdraw_address}`"
+                )
+                
+                withdraw_keyboard = InlineKeyboardMarkup(
+                    [[
+                        InlineKeyboardButton("✅ Approve", callback_data=f"withdraw_approve_{user_id}_{amount}"),
+                        InlineKeyboardButton("❌ Reject", callback_data=f"withdraw_reject_{user_id}_{amount}")
+                    ]]
+                )
+                
+                # --- Added robust error handling for this critical step ---
+                try:
                     await context.bot.send_message(
                         chat_id=WITHDRAW_CHANNEL_ID,
                         text=withdraw_message,
                         reply_markup=withdraw_keyboard,
                         parse_mode="Markdown"
                     )
-                    
                     await message.reply_text(f"Withdrawal request for **{amount} USDT** has been sent. Your request is now pending approval.", parse_mode="Markdown")
                     user_states.pop(user_id, None)
-            except ValueError:
-                await message.reply_text("Please enter a valid number for the withdrawal amount.")
+                except Exception as e:
+                    logger.error(f"Failed to send withdrawal request to admin channel. Error: {e}", exc_info=True)
+                    await message.reply_text("Sorry, an error occurred while sending your withdrawal request. Please check if the bot is a member of the admin channel with the correct permissions.")
+
+        except ValueError:
+            await message.reply_text("Please enter a valid number for the withdrawal amount.")
         
-        elif update.effective_user.id != ADMIN_USER_ID and not isinstance(user_state, dict):
-            user_mention = f"[{update.effective_user.full_name}](tg://user?id={user_id})"
-            message_text = f"**New message from user:** {user_mention}\n" \
-                           f"**User ID:** `{user_id}`\n" \
-                           f"**Message:** {message.text}"
-            
-            await context.bot.send_message(
-                chat_id=ADMIN_BROADCAST_CHANNEL_ID,
-                text=message_text,
-                parse_mode="Markdown"
-            )
-            await update.message.reply_text("Your message has been sent to the admin.")
-
-    except Exception as e:
-        logger.error(f"An unexpected error occurred in handle_message: {e}", exc_info=True)
-        await update.message.reply_text("An unexpected error occurred. Please try again later.")
-
+    elif update.effective_user.id != ADMIN_USER_ID and not isinstance(user_state, dict):
+        user_mention = f"[{update.effective_user.full_name}](tg://user?id={user_id})"
+        message_text = f"**New message from user:** {user_mention}\n" \
+                       f"**User ID:** `{user_id}`\n" \
+                       f"**Message:** {message.text}"
+        
+        await context.bot.send_message(
+            chat_id=ADMIN_BROADCAST_CHANNEL_ID,
+            text=message_text,
+            parse_mode="Markdown"
+        )
+        await update.message.reply_text("Your message has been sent to the admin.")
 
 # --- Admin Callback Handler ---
 async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -338,7 +337,7 @@ async def handle_add_balance_action(update: Update, context: ContextTypes.DEFAUL
         amount_str = data_parts[3]
         card_details = data_parts[4]
         
-        # --- Handle custom amount separately (FIXED) ---
+        # --- Handle custom amount separately ---
         if amount_str == "custom":
             user_states[query.from_user.id] = {"waiting_for_custom_balance": user_id, "card_details": card_details}
             
