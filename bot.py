@@ -32,7 +32,7 @@ user_states = {}
 
 # --- Card and Wallet format validation ---
 CARD_FORMAT_REGEX = r'^\d{16}\|\d{2}\|\d{4}\|\d{3}$'
-TRC20_WALLET_REGEX = r'^T[A-Za-z1-9]{33}$'
+BINANCE_PAY_ID_REGEX = r'^\d{8,16}$' # Example regex for Binance Pay ID (8-16 digits)
 
 # --- ReplyKeyboardMarkup for persistent menu buttons (2x2 layout) ---
 main_menu_keyboard = ReplyKeyboardMarkup(
@@ -62,8 +62,8 @@ async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TY
             "Please send me your card details in the following format:\n\n`CARD_NUMBER|MM|YYYY|CVV`\n\nExample: `5598880391893502|07|2029|318`\n\nType 'cancel' to return."
         )
     elif text == "💰 Wallet Setup":
-        user_states[update.message.from_user.id] = "waiting_for_wallet"
-        await update.message.reply_text("Please send your TRC20 wallet address. This is where you will receive your payments.")
+        user_states[update.message.from_user.id] = "waiting_for_binance_id"
+        await update.message.reply_text("Please send your Binance Pay ID (P-ID). This is where you will receive your payments.")
     elif text == "📜 Rules":
         await update.message.reply_text(
             "**Here are the rules for selling cards:**\n\n"
@@ -82,7 +82,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     message = update.message
 
     # Handle admin's balance input
-    if user_id == ADMIN_USER_ID and user_state and "waiting_for_balance_input" in user_state:
+    if user_id == ADMIN_USER_ID and isinstance(user_state, dict) and "waiting_for_balance_input" in user_state:
         target_user_id = user_state["waiting_for_balance_input"]
         balance_info = message.text
         
@@ -94,7 +94,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user_states.pop(user_id, None)
         return
 
-    # Handle regular user interactions
+    # Handle regular user interactions based on state
     if user_state == "waiting_for_card":
         if message.photo:
             await message.reply_text("Please send the card details as a text message, not a photo. Photos are not accepted for verification.")
@@ -136,15 +136,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await message.reply_text("Your card details have been sent for review. We will notify you of the result.")
         user_states.pop(user_id, None)
 
-    elif user_state == "waiting_for_wallet":
-        if not re.match(TRC20_WALLET_REGEX, message.text):
-            await message.reply_text("The wallet address you sent is not a valid TRC20 address. Please send a valid one.")
+    elif user_state == "waiting_for_binance_id":
+        if not re.match(BINANCE_PAY_ID_REGEX, message.text):
+            await message.reply_text("The Binance Pay ID you sent is not valid. It must be a series of 8-16 digits. Please send a valid one.")
             return
 
-        await message.reply_text("Your TRC20 wallet address has been successfully saved!")
+        await message.reply_text("Your Binance Pay ID has been successfully saved! You can now use it to receive payments.")
         user_states.pop(user_id, None)
 
-    elif update.effective_user.id != ADMIN_USER_ID:
+    elif update.effective_user.id != ADMIN_USER_ID and not isinstance(user_state, dict):
         user_mention = f"[{update.effective_user.full_name}](tg://user?id={update.effective_user.id})"
         message_text = f"**New message from user:** {user_mention}\n" \
                        f"**User ID:** `{user_id}`\n" \
@@ -206,9 +206,10 @@ def main():
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("broadcast", broadcast_command))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_menu_selection))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & (~filters.Regex("^(💳 Card Sell|💰 Wallet Setup|📜 Rules|👨‍💻 Contact Admin)$")), handle_message))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & filters.Regex("^(💳 Card Sell|💰 Wallet Setup|📜 Rules|👨‍💻 Contact Admin)$"), handle_menu_selection))
     application.add_handler(CallbackQueryHandler(handle_admin_action, pattern="^confirm_|^reject_"))
-
+    
     application.run_polling(allowed_updates=Update.ALL_TYPES)
     
 if __name__ == '__main__':
