@@ -137,7 +137,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         caption_text = (
             f"**💳 New Card Submission**\n\n"
             f"**User:** {user_mention} ({user_username})\n"
-            f"**User ID:** `{user_id}`\n\n"
+            f"**User ID:** `{user_id}`\n"
             f"**Card Details:**\n`{message.text}`"
         )
         
@@ -230,12 +230,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Sorry, I don't understand that command. Please use one of the menu buttons.")
 
 
-# --- Admin Custom Balance Command Handler ---
+# --- Admin Custom Balance Command Handler (Accessible only to Admin) ---
 async def add_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles the /add_balance <user_id> <amount> command for admins in a specific channel."""
-    # Check if the command is sent from the designated channel
-    if str(update.effective_chat.id) != WITHDRAW_CHANNEL_ID:
-        await update.message.reply_text("This command can only be used in the designated withdrawal channel.")
+    """Handles the /add_balance <user_id> <amount> command, accessible only by the ADMIN_USER_ID."""
+    if update.effective_user.id != ADMIN_USER_ID:
+        await update.message.reply_text("You are not authorized to use this command.")
         return
 
     try:
@@ -325,7 +324,6 @@ async def handle_withdraw_action(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     try:
-        # Fixed the callback data parsing
         data_parts = query.data.split('_')
         action = data_parts[1]
         user_id = int(data_parts[2])
