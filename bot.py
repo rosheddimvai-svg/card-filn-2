@@ -206,8 +206,7 @@ def main():
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("broadcast", broadcast_command))
-    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, handle_message))
-    application.add_handler(CallbackQueryHandler(handle_button_press, pattern="^card_sell|wallet_setup|rules|contact_admin$"))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_menu_selection))
     application.add_handler(CallbackQueryHandler(handle_admin_action, pattern="^confirm_|^reject_"))
 
     application.run_polling(allowed_updates=Update.ALL_TYPES)
