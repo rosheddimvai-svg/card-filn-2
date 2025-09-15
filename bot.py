@@ -297,18 +297,32 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         balance_keyboard = InlineKeyboardMarkup(rows)
         
-        await query.edit_message_text(
-            f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\nChoose an amount to add to {user_mention}'s balance, or type a custom amount.",
-            reply_markup=balance_keyboard,
-            parse_mode="Markdown"
-        )
+        try:
+            await query.edit_message_text(
+                f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\nChoose an amount to add to {user_mention}'s balance, or type a custom amount.",
+                reply_markup=balance_keyboard,
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Failed to edit message for confirm action: {e}")
+            await context.bot.send_message(
+                chat_id=query.from_user.id,
+                text=f"Error editing message. Please check the bot logs. Error: {e}"
+            )
             
     elif action == "reject":
-        await context.bot.send_message(
-            chat_id=user_id,
-            text="❌ Your card has been rejected. Please check the details and try again."
-        )
-        await query.edit_message_text(f"{original_message_text}\n\n**Status: ❌ REJECTED**")
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="❌ Your card has been rejected. Please check the details and try again."
+            )
+            await query.edit_message_text(f"{original_message_text}\n\n**Status: ❌ REJECTED**")
+        except Exception as e:
+            logger.error(f"Failed to handle reject action: {e}")
+            await context.bot.send_message(
+                chat_id=query.from_user.id,
+                text=f"Error handling reject action. Please check the bot logs. Error: {e}"
+            )
 
 async def handle_add_balance_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles admin's preset balance and custom amount buttons."""
