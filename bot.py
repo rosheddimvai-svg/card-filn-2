@@ -107,7 +107,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_state = user_states.get(user_id, None)
     message = update.message
 
-    # Handle admin's custom balance input
+    # --- Handle Admin's custom balance input (FIXED) ---
     if user_id == ADMIN_USER_ID and isinstance(user_state, dict) and "waiting_for_custom_balance" in user_state:
         target_user_id = user_state["waiting_for_custom_balance"]
         card_details = user_state.get("card_details", "N/A")
@@ -147,7 +147,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await message.reply_text("Invalid balance amount. Please enter a valid number.")
         return
 
-    # Handle regular user interactions based on state
+    # --- Handle regular user interactions based on state ---
     if user_state == "waiting_for_card":
         if message.photo:
             await message.reply_text("Please send the card details as a text message, not a photo. Photos are not accepted for verification.")
@@ -199,6 +199,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await message.reply_text("Your card details have been sent for review. We will notify you of the result.")
         user_states.pop(user_id, None)
         
+    # --- Withdrawal handlers (FIXED) ---
     elif user_state == "waiting_for_withdraw_address":
         withdraw_address = message.text
         user_states[user_id] = {"state": "waiting_for_withdraw_amount", "withdraw_address": withdraw_address}
@@ -280,7 +281,6 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_full_name = user_info.full_name
         user_mention = f"[{user_full_name}](tg://user?id={user_id})"
 
-        # A more limited set of balance options to avoid "Reply markup is too long" error
         balance_keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("Add 5 USDT", callback_data=f"add_balance_{user_id}_5_{card_details}"),
@@ -295,18 +295,11 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
             ]
         ])
         
-        try:
-            await query.edit_message_text(
-                f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\nChoose an amount to add to {user_mention}'s balance, or type a custom amount.",
-                reply_markup=balance_keyboard,
-                parse_mode="Markdown"
-            )
-        except Exception as e:
-            logger.error(f"Failed to edit message for confirm action: {e}")
-            await context.bot.send_message(
-                chat_id=query.from_user.id,
-                text=f"Error editing message. Please check the bot logs. Error: {e}"
-            )
+        await query.edit_message_text(
+            f"{original_message_text}\n\n**Status: ✅ APPROVED**\n\nChoose an amount to add to {user_mention}'s balance.",
+            reply_markup=balance_keyboard,
+            parse_mode="Markdown"
+        )
             
     elif action == "reject":
         try:
@@ -339,22 +332,14 @@ async def handle_add_balance_action(update: Update, context: ContextTypes.DEFAUL
         amount_str = data_parts[3]
         card_details = data_parts[4]
         
+        # --- Handle custom amount separately (FIXED) ---
         if amount_str == "custom":
             user_states[query.from_user.id] = {"waiting_for_custom_balance": user_id, "card_details": card_details}
             
-            # This is the updated part for the custom amount fix
-            try:
-                await query.edit_message_text(
-                    f"Please reply to this message with the exact amount to add to user `{user_id}`'s balance.",
-                    parse_mode="Markdown"
-                )
-            except Exception as e:
-                # Fallback to a new message if editing fails
-                logger.error(f"Failed to edit message for custom amount action: {e}")
-                await context.bot.send_message(
-                    chat_id=query.from_user.id,
-                    text=f"Please reply to this message with the exact amount to add to user `{user_id}`'s balance."
-                )
+            await context.bot.send_message(
+                chat_id=query.from_user.id,
+                text=f"Please reply with the exact amount you want to add to user `{user_id}`'s balance."
+            )
             return
 
         amount = float(amount_str)
