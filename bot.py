@@ -37,14 +37,13 @@ submitted_cards = set() # A set to store submitted card details to prevent dupli
 
 # --- Card and Wallet format validation ---
 CARD_FORMAT_REGEX = r'^\d{16}\|\d{2}\|\d{4}\|\d{3}$'
-BINANCE_PAY_ID_REGEX = r'^\d{8,16}$'
 
 # --- ReplyKeyboardMarkup for persistent menu buttons (2x2 layout) ---
 main_menu_keyboard = ReplyKeyboardMarkup(
     [
         [KeyboardButton("💰 My Balance"), KeyboardButton("💳 Card Sell")],
-        [KeyboardButton("💰 Wallet Setup"), KeyboardButton("📜 Rules")],
-        [KeyboardButton("💸 Withdraw"), KeyboardButton("👨‍💻 Contact Admin")]
+        [KeyboardButton("📜 Rules"), KeyboardButton("👨‍💻 Contact Admin")],
+        [KeyboardButton("💸 Withdraw")]
     ],
     resize_keyboard=True,
     one_time_keyboard=False
@@ -55,7 +54,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Sends the main menu keyboard when the /start command is issued."""
     user_id = update.effective_user.id
     if user_id not in user_data:
-        user_data[user_id] = {"balance": 0, "binance_id": None}
+        user_data[user_id] = {"balance": 0}
     await update.message.reply_text(
         "Welcome! I am a bot for buying and selling Master/Visa cards. Please choose an option from the menu below:",
         reply_markup=main_menu_keyboard
@@ -71,9 +70,6 @@ async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text(
             "Please send me your card details in the following format:\n\n`CARD_NUMBER|MM|YYYY|CVV`\n\nExample: `5598880391893502|07|2029|318`\n\nType 'cancel' to return."
         )
-    elif text == "💰 Wallet Setup":
-        user_states[user_id] = "waiting_for_binance_id"
-        await update.message.reply_text("Please send your Binance Pay ID (P-ID). This is where you will receive your payments.")
     elif text == "📜 Rules":
         await update.message.reply_text(
             "**Here are the rules for selling cards:**\n\n"
@@ -88,28 +84,22 @@ async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TY
         user_full_name = update.effective_user.full_name
         user_username = f"@{update.effective_user.username}" if update.effective_user.username else "N/A"
         balance = user_data.get(user_id, {}).get("balance", 0)
-        binance_id = user_data.get(user_id, {}).get("binance_id", "Not set")
 
         message_text = (
-            f"**💰 Your Balance & Wallet Info**\n\n"
+            f"**💰 Your Balance Info**\n\n"
             f"**User:** {user_full_name} ({user_username})\n"
             f"**User ID:** `{user_id}`\n"
-            f"**Current Balance:** **{balance} USDT**\n"
-            f"**Binance Pay ID:** `{binance_id}`"
+            f"**Current Balance:** **{balance} USDT**"
         )
         await update.message.reply_text(message_text, parse_mode="Markdown")
     elif text == "💸 Withdraw":
         if user_id not in user_data or user_data[user_id].get("balance", 0) <= 0:
             await update.message.reply_text("You have no balance to withdraw.")
             return
-        
-        binance_id = user_data.get(user_id, {}).get("binance_id")
-        if not binance_id:
-            await update.message.reply_text("Please set up your Binance Pay ID first using the 'Wallet Setup' button.")
-            return
 
-        user_states[user_id] = "waiting_for_withdraw_amount"
-        await update.message.reply_text(f"Your current balance is **{user_data[user_id]['balance']} USDT**. How much do you want to withdraw?")
+        user_states[user_id] = "waiting_for_withdraw_address"
+        await update.message.reply_text("Please send the withdrawal address you would like to use.")
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles incoming messages based on user's current state and admin's actions."""
@@ -126,7 +116,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         try:
             balance_amount = float(balance_info)
             if target_user_id not in user_data:
-                user_data[target_user_id] = {"balance": 0, "binance_id": None}
+                user_data[target_user_id] = {"balance": 0}
             user_data[target_user_id]["balance"] += balance_amount
 
             user_info = await context.bot.get_chat(target_user_id)
@@ -208,19 +198,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             
         await message.reply_text("Your card details have been sent for review. We will notify you of the result.")
         user_states.pop(user_id, None)
-
-    elif user_state == "waiting_for_binance_id":
-        if not re.match(BINANCE_PAY_ID_REGEX, message.text):
-            await message.reply_text("The Binance Pay ID you sent is not valid. It must be a series of 8-16 digits. Please send a valid one.")
-            return
         
-        if user_id not in user_data:
-            user_data[user_id] = {"balance": 0}
-        user_data[user_id]["binance_id"] = message.text
-        await update.message.reply_text("Your Binance Pay ID has been successfully saved! You can now use it to receive payments.")
-        user_states.pop(user_id, None)
-    
-    elif user_state == "waiting_for_withdraw_amount":
+    elif user_state == "waiting_for_withdraw_address":
+        withdraw_address = message.text
+        user_states[user_id] = {"state": "waiting_for_withdraw_amount", "withdraw_address": withdraw_address}
+        await message.reply_text(f"Your withdrawal address is saved as:\n`{withdraw_address}`\n\nNow, please send the amount you want to withdraw.")
+
+    elif isinstance(user_state, dict) and user_state.get("state") == "waiting_for_withdraw_amount":
+        withdraw_address = user_state.get("withdraw_address")
         try:
             amount = float(message.text)
             current_balance = user_data.get(user_id, {}).get("balance", 0)
@@ -230,7 +215,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             elif amount > current_balance:
                 await message.reply_text(f"You don't have enough balance. Your current balance is **{current_balance} USDT**.", parse_mode="Markdown")
             else:
-                binance_id = user_data[user_id]["binance_id"]
                 user_full_name = message.from_user.full_name
                 user_mention = f"[{user_full_name}](tg://user?id={user_id})"
                 
@@ -239,7 +223,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     f"**User:** {user_mention}\n"
                     f"**User ID:** `{user_id}`\n"
                     f"**Amount:** **{amount} USDT**\n"
-                    f"**Binance Pay ID:** `{binance_id}`"
+                    f"**Withdrawal Address:** `{withdraw_address}`"
                 )
                 
                 withdraw_keyboard = InlineKeyboardMarkup(
@@ -358,12 +342,14 @@ async def handle_add_balance_action(update: Update, context: ContextTypes.DEFAUL
         if amount_str == "custom":
             user_states[query.from_user.id] = {"waiting_for_custom_balance": user_id, "card_details": card_details}
             
+            # This is the updated part for the custom amount fix
             try:
                 await query.edit_message_text(
                     f"Please reply to this message with the exact amount to add to user `{user_id}`'s balance.",
                     parse_mode="Markdown"
                 )
             except Exception as e:
+                # Fallback to a new message if editing fails
                 logger.error(f"Failed to edit message for custom amount action: {e}")
                 await context.bot.send_message(
                     chat_id=query.from_user.id,
@@ -373,7 +359,7 @@ async def handle_add_balance_action(update: Update, context: ContextTypes.DEFAUL
 
         amount = float(amount_str)
         if user_id not in user_data:
-            user_data[user_id] = {"balance": 0, "binance_id": None}
+            user_data[user_id] = {"balance": 0}
         
         user_data[user_id]["balance"] += amount
 
@@ -462,8 +448,8 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & (~filters.Regex("^(💳 Card Sell|💰 Wallet Setup|📜 Rules|👨‍💻 Contact Admin|💰 My Balance|💸 Withdraw)$")), handle_message))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & filters.Regex("^(💳 Card Sell|💰 Wallet Setup|📜 Rules|👨‍💻 Contact Admin|💰 My Balance|💸 Withdraw)$"), handle_menu_selection))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & (~filters.Regex("^(💳 Card Sell|📜 Rules|👨‍💻 Contact Admin|💰 My Balance|💸 Withdraw)$")), handle_message))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & filters.Regex("^(💳 Card Sell|📜 Rules|👨‍💻 Contact Admin|💰 My Balance|💸 Withdraw)$"), handle_menu_selection))
     application.add_handler(CallbackQueryHandler(handle_admin_action, pattern="^confirm_|^reject_"))
     application.add_handler(CallbackQueryHandler(handle_add_balance_action, pattern="^add_balance_"))
     application.add_handler(CallbackQueryHandler(handle_withdraw_action, pattern="^withdraw_approve_|^withdraw_reject_"))
